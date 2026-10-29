@@ -1,0 +1,31 @@
+# Virtual environment
+.venv/
+
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Config overrides (machine-specific)
+config/local.yaml
+
+# Model weights
+models/*
+!models/.gitkeep
+
+# Recordings and temporary data
+data/recordings/*
+!data/recordings/.gitkeep
+data/fixtures/
+
+# Video results and intermediate files
+results/*.mp4
+results/*.avi
+results/*.mkv
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
+

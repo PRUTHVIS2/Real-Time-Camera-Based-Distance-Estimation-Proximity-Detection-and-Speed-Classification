@@ -1,0 +1,29 @@
+[project]
+name = "minor-project"
+version = "0.1.0"
+description = "Real-Time Camera-Based Distance Estimation, Proximity Detection and Speed Classification of Pedestrians and Vehicles"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "torch",
+    "torchvision",
+    "ultralytics",
+    "lapx",
+    "numpy",
+    "scipy",
+    "pyyaml",
+    "pandas",
+    "matplotlib",
+    "flask",
+    "flask-socketio",
+    "simple-websocket",
+    "pytest",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

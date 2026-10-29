@@ -1,0 +1,50 @@
+camera:
+  camera_id: phone_main        # selects data/calibration/phone_main.json
+  source: 0                    # int = webcam index | "rtsp://..." | "clip.mp4" (dev only)
+  width: 1280
+  height: 720
+  rtsp_transport: tcp          # tcp avoids packet-loss artefacts over Wi-Fi
+
+detector:
+  model: models/yolo11n.pt
+  imgsz: 640
+  conf: 0.25                   # try 0.10-0.15 in Phase 2 so ByteTrack can use low-score boxes
+  iou: 0.5
+  device: cpu
+  num_threads: 8               # set to physical cores
+
+merge:
+  min_containment: 0.5         # share of the person box area that must lie inside the bike box
+  rider_memory_frames: 15      # keep suppressing a recently merged rider if the bike detection flickers
+
+geometry:
+  max_range_m: 15              # beyond this, distance is OUT_OF_RANGE
+  distance_ema_alpha: 0.4
+  truncation_margin_px: 3      # box touching frame edge => foot point unreliable
+
+pinhole_baseline:              # ASSUMED real heights, used only for the comparison baseline
+  person_height_m: 1.7
+  two_wheeler_height_m: 1.1
+  car_height_m: 1.5
+
+proximity:
+  threshold_m: {person: 3.0, two_wheeler: 5.0, car: 8.0}   # placeholders, confirm with guide
+  hysteresis_m: 0.3            # enter at d <= T, leave at d > T + hysteresis
+
+speed:
+  window_s: 0.7
+  min_points: 5
+  class_vote_len: 5
+  track_forget_s: 2.0
+  dead_zone_mps: {person: 0.3, two_wheeler: 0.5, car: 0.5}
+  max_plausible_mps: {person: 12, two_wheeler: 40, car: 45}   # reject spikes above this (ID switches)
+  # Upper bounds of the first four classes; anything above the last is the fifth class.
+  person_upper_mps: [0.3, 1.0, 1.8, 3.0]      # Stationary / Slow / Moderate / Fast / Very fast
+  vehicle_upper_kmh: [2, 30, 60, 90]          # shared by two_wheeler and car
+
+dashboard:
+  host: 0.0.0.0
+  port: 5000
+  max_send_fps: 15
+  jpeg_quality: 70
+
