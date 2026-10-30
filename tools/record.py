@@ -77,6 +77,8 @@ def main() -> int:
         source_val,
         width=cfg.camera.width,
         height=cfg.camera.height,
+        fps=cfg.camera.fps,
+        fourcc=cfg.camera.fourcc,
         rtsp_transport=cfg.camera.rtsp_transport,
     )
 

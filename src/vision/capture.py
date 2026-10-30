@@ -50,16 +50,39 @@ class FrameSource(ABC):
 class WebcamSource(FrameSource):
     """Local USB or integrated webcam capture source."""
 
-    def __init__(self, index: int = 0, width: int | None = None, height: int | None = None) -> None:
+    def __init__(
+        self,
+        index: int = 0,
+        width: int | None = None,
+        height: int | None = None,
+        fps: float | None = None,
+        fourcc: str | None = "MJPG",
+    ) -> None:
         self.index = index
         self.cap = cv2.VideoCapture(index)
         if not self.cap.isOpened():
             logger.warning(f"Could not open webcam index {index}")
 
+        if fourcc:
+            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
         if width is not None and width > 0:
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(width))
         if height is not None and height > 0:
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(height))
+        if fps is not None and fps > 0:
+            self.cap.set(cv2.CAP_PROP_FPS, float(fps))
+
+        # Read back what driver actually granted
+        if self.cap.isOpened():
+            rw = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            rh = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            rfps = self.cap.get(cv2.CAP_PROP_FPS)
+            rfcc_int = int(self.cap.get(cv2.CAP_PROP_FOURCC))
+            rfcc = "".join([chr((rfcc_int >> (8 * i)) & 0xFF) for i in range(4)])
+            logger.info(
+                f"Webcam {index} opened: requested ({width}x{height} @ {fps}fps, {fourcc}), "
+                f"driver granted ({rw}x{rh} @ {rfps:.1f}fps, {rfcc})"
+            )
 
     @property
     def is_opened(self) -> bool:
@@ -205,6 +228,8 @@ def create_source(
     source: int | str,
     width: int | None = None,
     height: int | None = None,
+    fps: float | None = None,
+    fourcc: str | None = "MJPG",
     rtsp_transport: str = "tcp",
 ) -> FrameSource:
     """Factory function to instantiate the appropriate FrameSource.
@@ -213,13 +238,15 @@ def create_source(
         source: Integer device index, RTSP URL ('rtsp://...'), or path to video file.
         width: Desired width for webcam capture.
         height: Desired height for webcam capture.
+        fps: Desired FPS for webcam capture.
+        fourcc: Desired fourcc codec (e.g. 'MJPG') for webcam capture.
         rtsp_transport: Transport protocol for RTSP ('tcp' or 'udp').
 
     Returns:
         Configured FrameSource instance.
     """
     if isinstance(source, int) or (isinstance(source, str) and source.isdigit()):
-        return WebcamSource(index=int(source), width=width, height=height)
+        return WebcamSource(index=int(source), width=width, height=height, fps=fps, fourcc=fourcc)
     if isinstance(source, str) and (source.startswith("rtsp://") or source.startswith("rtsps://") or source.startswith("http://")):
         return RtspSource(url=source, transport=rtsp_transport)
     return FileSource(path=source)

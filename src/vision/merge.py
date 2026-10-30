@@ -114,22 +114,22 @@ class RiderMerger:
     def __init__(
         self,
         min_containment: float = 0.5,
-        rider_memory_frames: int = 15,
+        rider_memory_s: float = 1.0,
         truncation_margin_px: int = 3,
         default_frame_size: Tuple[int, int] = (1280, 720),
     ) -> None:
         self.min_containment = min_containment
-        self.rider_memory_frames = rider_memory_frames
+        self.rider_memory_s = rider_memory_s
         self.truncation_margin_px = truncation_margin_px
         self.default_frame_size = default_frame_size
 
-        # Maps person_track_id -> consecutive frames seen without a bike
-        self._rider_memory: dict[int, int] = {}
+        # Maps person_track_id -> timestamp (seconds) when person was last merged with a bike
+        self._last_merged_t: dict[int, float] = {}
         self._fallback_id_counter = 10000
 
     def reset(self) -> None:
         """Clear tracking memory state."""
-        self._rider_memory.clear()
+        self._last_merged_t.clear()
         self._fallback_id_counter = 10000
 
     def _get_id(self, track_id: int | None) -> int:
@@ -173,7 +173,6 @@ class RiderMerger:
                 cars.append(det)
 
         # For each person, find all qualifying bikes and pick the one with max containment
-        # bike_index -> list of person detections assigned as riders
         bike_riders: dict[int, list[Detection]] = {i: [] for i in range(len(bikes))}
         merged_person_indices: set[int] = set()
 
@@ -194,10 +193,10 @@ class RiderMerger:
             if best_bike_idx is not None:
                 bike_riders[best_bike_idx].append(p)
                 merged_person_indices.add(p_idx)
-                # If person has a valid track ID, remember that this person was merged
+                # If person has a valid track ID, remember that this person was merged at t_capture
                 p_id = p.track_id
                 if p_id is not None:
-                    self._rider_memory[p_id] = 0
+                    self._last_merged_t[p_id] = t_capture
 
         output: list[TrackedObject] = []
 
@@ -242,18 +241,16 @@ class RiderMerger:
                 continue
 
             p_id = p.track_id
-            if p_id is not None and p_id in self._rider_memory:
-                # Increment unseen bike frame counter
-                self._rider_memory[p_id] += 1
-                if self._rider_memory[p_id] <= self.rider_memory_frames:
-                    # Suppress person from appearing as a pedestrian
+            if p_id is not None and p_id in self._last_merged_t:
+                elapsed = t_capture - self._last_merged_t[p_id]
+                if elapsed <= (self.rider_memory_s + 1e-6):
                     logger.debug(
-                        f"Suppressing rider person ID {p_id} (flicker frame {self._rider_memory[p_id]}/{self.rider_memory_frames})"
+                        f"Suppressing rider person ID {p_id} (flicker elapsed {elapsed:.3f}s / {self.rider_memory_s}s)"
                     )
                     continue
                 else:
                     # Memory expired; remove from suppression memory and let person appear
-                    del self._rider_memory[p_id]
+                    del self._last_merged_t[p_id]
 
             person_id = self._get_id(p.track_id)
             truncated = is_box_truncated(p.xyxy, f_size, self.truncation_margin_px)
@@ -282,7 +279,7 @@ def merge_riders(
     """Stateless functional wrapper for single-frame rider merging (without history memory)."""
     merger = RiderMerger(
         min_containment=min_containment,
-        rider_memory_frames=0,
+        rider_memory_s=0.0,
         truncation_margin_px=truncation_margin_px,
         default_frame_size=frame_size,
     )

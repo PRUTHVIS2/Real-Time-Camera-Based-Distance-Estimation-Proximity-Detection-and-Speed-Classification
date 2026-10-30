@@ -17,10 +17,12 @@ import yaml
 @dataclass
 class CameraConfig:
     """Camera configuration parameters."""
-    camera_id: str = "phone_main"
+    camera_id: str = "laptop_webcam"
     source: int | str = 0
     width: int = 1280
     height: int = 720
+    fps: float = 30.0
+    fourcc: str = "MJPG"
     rtsp_transport: str = "tcp"
 
 
@@ -39,7 +41,7 @@ class DetectorConfig:
 class MergeConfig:
     """Rider and bike merge configuration parameters."""
     min_containment: float = 0.5
-    rider_memory_frames: int = 15
+    rider_memory_s: float = 1.0
 
 
 @dataclass

@@ -1,8 +1,10 @@
 camera:
-  camera_id: phone_main        # selects data/calibration/phone_main.json
+  camera_id: laptop_webcam     # selects data/calibration/laptop_webcam.json
   source: 0                    # int = webcam index | "rtsp://..." | "clip.mp4" (dev only)
   width: 1280
   height: 720
+  fps: 30.0
+  fourcc: MJPG
   rtsp_transport: tcp          # tcp avoids packet-loss artefacts over Wi-Fi
 
 detector:
@@ -15,7 +17,7 @@ detector:
 
 merge:
   min_containment: 0.5         # share of the person box area that must lie inside the bike box
-  rider_memory_frames: 15      # keep suppressing a recently merged rider if the bike detection flickers
+  rider_memory_s: 1.0          # keep suppressing a recently merged rider if the bike flickers (seconds)
 
 geometry:
   max_range_m: 15              # beyond this, distance is OUT_OF_RANGE
@@ -32,6 +34,9 @@ proximity:
   hysteresis_m: 0.3            # enter at d <= T, leave at d > T + hysteresis
 
 speed:
+  # NOTE: min_points must stay consistent with the real capture FPS.
+  # At ~10 FPS, 5 points covers ~0.5s of history (within window_s=0.7).
+  # If FPS drops lower, reduce min_points or increase window_s accordingly.
   window_s: 0.7
   min_points: 5
   class_vote_len: 5

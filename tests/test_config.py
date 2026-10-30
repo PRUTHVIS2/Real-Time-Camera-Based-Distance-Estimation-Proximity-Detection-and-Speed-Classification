@@ -10,10 +10,11 @@ def test_default_config_loads(tmp_path):
     """Test that the default config loads cleanly into an AppConfig instance."""
     cfg = load_config(default_path="config/default.yaml", local_path=tmp_path / "nonexistent.yaml")
     assert isinstance(cfg, AppConfig)
-    assert cfg.camera.camera_id == "phone_main"
+    assert cfg.camera.camera_id == "laptop_webcam"
     assert cfg.camera.source == 0
     assert cfg.camera.width == 1280
     assert cfg.camera.height == 720
+    assert cfg.camera.fourcc == "MJPG"
     assert cfg.camera.rtsp_transport == "tcp"
     assert cfg.detector.model == "models/yolo11n.pt"
     assert cfg.detector.imgsz == 640
@@ -21,6 +22,7 @@ def test_default_config_loads(tmp_path):
     assert cfg.detector.device == "cpu"
     assert cfg.detector.num_threads == 8
     assert cfg.merge.min_containment == 0.5
+    assert cfg.merge.rider_memory_s == 1.0
     assert cfg.geometry.max_range_m == 15.0
     assert cfg.proximity.threshold_m["person"] == 3.0
     assert cfg.speed.window_s == 0.7
@@ -51,7 +53,7 @@ def test_local_yaml_overrides_value(tmp_path):
 
     # Non-overridden sibling values preserved
     assert cfg.camera.height == 720
-    assert cfg.camera.camera_id == "phone_main"
+    assert cfg.camera.camera_id == "laptop_webcam"
     assert cfg.detector.model == "models/yolo11n.pt"
     assert cfg.detector.iou == 0.5
 

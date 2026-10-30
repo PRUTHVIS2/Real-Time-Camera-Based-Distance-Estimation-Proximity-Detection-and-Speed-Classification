@@ -35,3 +35,11 @@ Live video -> Detect (YOLO11) -> Track (ByteTrack) -> Merge rider+bike
 Configuration values live in `config/default.yaml`.
 Machine-specific overrides (such as local RTSP URLs or camera index) can be placed in `config/local.yaml` (gitignored).
 
+## Known Limitations
+
+- **ByteTrack Appearance Model:** ByteTrack relies strictly on motion prediction (Kalman filtering) and bounding box IoU association to ensure lightweight, real-time performance on CPU architectures without deep ReID appearance feature extractors. Consequently:
+  - If an object is fully hidden from view (e.g., completely occluded by another person or walking behind an obstacle) for longer than `track_buffer` frames, it will be assigned a new track ID upon reappearance.
+  - **Effect on Distance Estimation:** **None.** Ground position and distance calculations are instantaneous geometric projections from the bounding box foot point via the planar homography matrix $H$; distance does not depend on tracking history or track IDs.
+  - **Effect on Speed Estimation:** A new track ID restarts its position deque history, temporarily returning `ESTIMATING` until `min_points` accumulate. The velocity spike guard (`max_plausible_mps`) rejects abrupt position jumps, preventing spurious velocity spikes during ID swaps.
+
+

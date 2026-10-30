@@ -135,7 +135,7 @@ class YoloDetector:
         results = self.model.track(
             source=frame,
             persist=True,
-            tracker="bytetrack.yaml",
+            tracker="config/bytetrack.yaml",
             classes=[0, 1, 2, 3],
             imgsz=self.config.imgsz,
             conf=self.config.conf,

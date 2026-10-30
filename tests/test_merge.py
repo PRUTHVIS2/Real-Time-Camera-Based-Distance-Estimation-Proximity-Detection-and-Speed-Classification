@@ -100,23 +100,24 @@ def test_p2_a6_rider_memory_suppression():
     bike_det = Detection(xyxy=(100.0, 100.0, 300.0, 300.0), conf=0.9, cls="motorcycle", track_id=10)
     person_det = Detection(xyxy=(150.0, 120.0, 250.0, 260.0), conf=0.85, cls="person", track_id=1)
 
-    merger = RiderMerger(min_containment=0.5, rider_memory_frames=3)
+    # 0.3 second memory window (independent of FPS)
+    merger = RiderMerger(min_containment=0.5, rider_memory_s=0.3)
 
-    # 5 frames merged
+    # 5 frames merged at dt = 0.1s (t = 0.0 to 0.4)
     for f in range(5):
-        objs = merger.merge([bike_det, person_det], t_capture=float(f))
+        objs = merger.merge([bike_det, person_det], t_capture=float(f * 0.1))
         assert len(objs) == 1
         assert objs[0].cls == "two_wheeler"
         assert objs[0].track_id == 10
 
-    # 3 frames with bike missing but person still detected
+    # 3 frames with bike missing but person still detected within 0.3s window (t = 0.5, 0.6, 0.7)
     for f in range(5, 8):
-        objs = merger.merge([person_det], t_capture=float(f))
-        # Person should remain suppressed during the 3 flicker frames!
-        assert len(objs) == 0, f"Expected person to be suppressed on frame {f}"
+        t = f * 0.1
+        objs = merger.merge([person_det], t_capture=t)
+        assert len(objs) == 0, f"Expected person to be suppressed at t={t}"
 
-    # 4th frame without bike: rider_memory_frames (3) exceeded, person should reappear as pedestrian!
-    objs = merger.merge([person_det], t_capture=8.0)
+    # 4th frame without bike: t = 0.8s (elapsed 0.4s > 0.3s threshold), person reappears as pedestrian!
+    objs = merger.merge([person_det], t_capture=0.8)
     assert len(objs) == 1
     assert objs[0].cls == "person"
     assert objs[0].track_id == 1

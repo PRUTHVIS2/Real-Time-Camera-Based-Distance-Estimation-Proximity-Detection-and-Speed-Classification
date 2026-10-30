@@ -72,12 +72,14 @@ def main() -> int:
         source_val,
         width=cfg.camera.width,
         height=cfg.camera.height,
+        fps=cfg.camera.fps,
+        fourcc=cfg.camera.fourcc,
         rtsp_transport=cfg.camera.rtsp_transport,
     )
     detector = YoloDetector(cfg.detector)
     merger = RiderMerger(
         min_containment=cfg.merge.min_containment,
-        rider_memory_frames=cfg.merge.rider_memory_frames,
+        rider_memory_s=cfg.merge.rider_memory_s,
         truncation_margin_px=cfg.geometry.truncation_margin_px,
         default_frame_size=(cfg.camera.width, cfg.camera.height),
     )
