@@ -44,3 +44,4 @@ def test_empty_detections():
     """Verify empty input produces empty output without error."""
     dets = map_raw_detections([], [], [])
     assert dets == []
+

@@ -86,3 +86,4 @@ def test_create_source_factory(sample_video_file: Path):
     s_rtsp = create_source("rtsp://localhost:8554/live")
     assert isinstance(s_rtsp, RtspSource)
     s_rtsp.close()
+

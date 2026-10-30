@@ -122,3 +122,48 @@ class YoloDetector:
             class_ids=clss,
             track_ids=None,
         )
+
+    def track(self, frame: np.ndarray) -> list[Detection]:
+        """Run object detection with ByteTrack tracking on an input BGR frame.
+
+        Args:
+            frame: Input image array in BGR format.
+
+        Returns:
+            List of Detection objects carrying persistent track_id values.
+        """
+        results = self.model.track(
+            source=frame,
+            persist=True,
+            tracker="bytetrack.yaml",
+            classes=[0, 1, 2, 3],
+            imgsz=self.config.imgsz,
+            conf=self.config.conf,
+            iou=self.config.iou,
+            device=self.config.device,
+            verbose=False,
+        )
+
+        if not results or len(results) == 0:
+            return []
+
+        res = results[0]
+        boxes = res.boxes
+        if boxes is None or len(boxes) == 0:
+            return []
+
+        xyxy = boxes.xyxy.cpu().numpy().tolist()
+        confs = boxes.conf.cpu().numpy().tolist()
+        clss = boxes.cls.int().cpu().numpy().tolist()
+
+        if boxes.id is not None:
+            track_ids = boxes.id.int().cpu().numpy().tolist()
+        else:
+            track_ids = [None] * len(xyxy)
+
+        return map_raw_detections(
+            boxes_xyxy=xyxy,
+            confidences=confs,
+            class_ids=clss,
+            track_ids=track_ids,
+        )

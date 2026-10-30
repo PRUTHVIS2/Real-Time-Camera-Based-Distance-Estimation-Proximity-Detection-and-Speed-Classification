@@ -1,8 +1,8 @@
-"""Live camera detection tool.
+"""Live camera tracking and rider-merge visualization tool.
 
-Displays live video stream from webcam, RTSP stream, or test video file,
-running YOLO11 detection with overlaid bounding boxes, class labels,
-confidence scores, and rolling average FPS.
+Runs ByteTrack tracking and rider-to-bike merging on live camera stream or video file,
+displaying persistent IDs, merged two-wheeler boxes with rider counts, edge truncation tags,
+and rolling FPS.
 """
 
 from __future__ import annotations
@@ -18,29 +18,39 @@ import cv2
 from vision.capture import create_source
 from vision.config import load_config
 from vision.detector import YoloDetector
+from vision.merge import RiderMerger
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("run_live")
 
-# Colors for bounding boxes (BGR)
+# Class colors in BGR
 CLASS_COLORS = {
     "person": (0, 255, 0),        # Green
-    "bicycle": (255, 255, 0),     # Cyan
+    "two_wheeler": (255, 255, 0),  # Cyan
     "car": (0, 200, 255),         # Yellow-Orange
-    "motorcycle": (0, 140, 255),  # Orange
 }
 DEFAULT_COLOR = (200, 200, 200)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Live camera detection viewer.")
+    parser = argparse.ArgumentParser(description="Live camera tracking and rider-merge viewer.")
     parser.add_argument(
         "--source",
         type=str,
         default=None,
         help="Camera index (e.g. 0), RTSP URL (rtsp://...), or video file path. Defaults to config.",
     )
-    parser.add_argument("--conf", type=float, default=None, help="Detection confidence threshold override.")
+    parser.add_argument(
+        "--conf",
+        type=float,
+        default=None,
+        help="Detection confidence threshold override (e.g. 0.25 vs 0.10 for ID stability tests).",
+    )
+    parser.add_argument(
+        "--raw",
+        action="store_true",
+        help="Display raw unmerged detections without rider merging.",
+    )
     parser.add_argument("--config", type=str, default="config/default.yaml", help="Path to config YAML.")
     parser.add_argument("--local-config", type=str, default="config/local.yaml", help="Path to local config YAML.")
     parser.add_argument("--no-display", action="store_true", help="Run without opening an OpenCV GUI window.")
@@ -55,6 +65,7 @@ def main() -> int:
     source_val = args.source if args.source is not None else cfg.camera.source
     if args.conf is not None:
         cfg.detector.conf = args.conf
+        logger.info(f"Overriding detector confidence threshold to: {cfg.detector.conf}")
 
     logger.info(f"Opening frame source: {source_val}")
     source = create_source(
@@ -64,8 +75,14 @@ def main() -> int:
         rtsp_transport=cfg.camera.rtsp_transport,
     )
     detector = YoloDetector(cfg.detector)
+    merger = RiderMerger(
+        min_containment=cfg.merge.min_containment,
+        rider_memory_frames=cfg.merge.rider_memory_frames,
+        truncation_margin_px=cfg.geometry.truncation_margin_px,
+        default_frame_size=(cfg.camera.width, cfg.camera.height),
+    )
 
-    window_name = "Minor Project - Live Detection"
+    window_name = "Minor Project - Tracking & Rider Merge"
     if not args.no_display:
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
@@ -79,11 +96,9 @@ def main() -> int:
         while True:
             frame, t_capture = source.read()
             if frame is None:
-                # If reading from file and reached EOF, terminate
                 if isinstance(source_val, str) and not source_val.startswith("rtsp"):
                     logger.info("End of file reached.")
                     break
-                # Idle briefly if stream is waiting/reconnecting
                 time.sleep(0.01)
                 if not args.no_display:
                     key = cv2.waitKey(1) & 0xFF
@@ -92,9 +107,31 @@ def main() -> int:
                 continue
 
             frame_count += 1
+            h, w = frame.shape[:2]
 
-            # Run detection
-            detections = detector.detect(frame)
+            # 1. Run detection with ByteTrack tracking
+            detections = detector.track(frame)
+
+            # 2. Run rider-two-wheeler merging
+            if args.raw:
+                # Raw unmerged visualization
+                tracked_objects = []
+                for det in detections:
+                    from vision.types import TrackedObject
+                    t_id = det.track_id if det.track_id is not None else -1
+                    tracked_objects.append(
+                        TrackedObject(
+                            track_id=t_id,
+                            cls=det.cls,
+                            box_xyxy=det.xyxy,
+                            conf=det.conf,
+                            rider_count=0,
+                            truncated=False,
+                            t=t_capture,
+                        )
+                    )
+            else:
+                tracked_objects = merger.merge(detections, t_capture=t_capture, frame_size=(w, h))
 
             # Compute rolling FPS
             now = time.perf_counter()
@@ -105,13 +142,19 @@ def main() -> int:
             rolling_fps = sum(fps_history) / len(fps_history) if fps_history else 0.0
 
             if not args.no_display:
-                # Draw detections
-                for det in detections:
-                    x1, y1, x2, y2 = (int(v) for v in det.xyxy)
-                    color = CLASS_COLORS.get(det.cls, DEFAULT_COLOR)
+                for obj in tracked_objects:
+                    x1, y1, x2, y2 = (int(v) for v in obj.box_xyxy)
+                    color = CLASS_COLORS.get(obj.cls, DEFAULT_COLOR)
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
-                    label = f"{det.cls} {det.conf:.2f}"
+                    # Label: #ID class conf [rider(s): n] [EDGE]
+                    label_parts = [f"#{obj.track_id} {obj.cls} {obj.conf:.2f}"]
+                    if obj.cls == "two_wheeler" and obj.rider_count > 0:
+                        label_parts.append(f"riders:{obj.rider_count}")
+                    if obj.truncated:
+                        label_parts.append("[EDGE]")
+                    label = " ".join(label_parts)
+
                     (txt_w, txt_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
                     cv2.rectangle(
                         frame,
@@ -131,11 +174,11 @@ def main() -> int:
                         cv2.LINE_AA,
                     )
 
-                # Draw FPS overlay
-                fps_text = f"FPS: {rolling_fps:.1f} ({len(detections)} objs)"
+                # Draw top overlay banner
+                status_text = f"FPS: {rolling_fps:.1f} | Objs: {len(tracked_objects)} | conf={cfg.detector.conf}"
                 cv2.putText(
                     frame,
-                    fps_text,
+                    status_text,
                     (15, 30),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.8,
@@ -150,13 +193,14 @@ def main() -> int:
                     logger.info("Quit key pressed.")
                     break
 
-                # Handle window close (X button)
                 if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
                     logger.info("Window closed.")
                     break
             else:
                 if frame_count % 30 == 0:
-                    logger.info(f"Processed {frame_count} frames | Rolling FPS: {rolling_fps:.1f} | Detections: {len(detections)}")
+                    logger.info(
+                        f"Processed {frame_count} frames | Rolling FPS: {rolling_fps:.1f} | Objects: {len(tracked_objects)}"
+                    )
 
             if args.max_frames is not None and frame_count >= args.max_frames:
                 logger.info(f"Reached max frames limit ({args.max_frames}).")
