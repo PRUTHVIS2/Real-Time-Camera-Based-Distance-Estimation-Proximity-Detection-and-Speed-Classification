@@ -51,6 +51,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Display raw unmerged detections without rider merging.",
     )
+    parser.add_argument(
+        "--save-video",
+        type=str,
+        default=None,
+        help="Path to output .mp4 file to record the video with bounding boxes and track IDs burned in.",
+    )
     parser.add_argument("--config", type=str, default="config/default.yaml", help="Path to config YAML.")
     parser.add_argument("--local-config", type=str, default="config/local.yaml", help="Path to local config YAML.")
     parser.add_argument("--no-display", action="store_true", help="Run without opening an OpenCV GUI window.")
@@ -91,6 +97,7 @@ def main() -> int:
     fps_history = collections.deque(maxlen=30)
     last_loop_t = time.perf_counter()
     frame_count = 0
+    video_writer: cv2.VideoWriter | None = None
 
     logger.info("Starting live processing loop. Press 'q' to quit.")
 
@@ -110,6 +117,16 @@ def main() -> int:
 
             frame_count += 1
             h, w = frame.shape[:2]
+
+            # Initialize video writer if --save-video is requested
+            if args.save_video and video_writer is None:
+                from pathlib import Path
+                save_p = Path(args.save_video)
+                save_p.parent.mkdir(parents=True, exist_ok=True)
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                writer_fps = getattr(source, "fps", 30.0) if getattr(source, "fps", 0) > 0 else 30.0
+                video_writer = cv2.VideoWriter(str(save_p), fourcc, writer_fps, (w, h))
+                logger.info(f"Recording annotated video to: {save_p} ({w}x{h} @ {writer_fps:.1f} FPS)")
 
             # 1. Run detection with ByteTrack tracking
             detections = detector.track(frame)
@@ -143,7 +160,9 @@ def main() -> int:
                 fps_history.append(1.0 / dt)
             rolling_fps = sum(fps_history) / len(fps_history) if fps_history else 0.0
 
-            if not args.no_display:
+            should_draw = (not args.no_display) or (video_writer is not None)
+
+            if should_draw:
                 for obj in tracked_objects:
                     x1, y1, x2, y2 = (int(v) for v in obj.box_xyxy)
                     color = CLASS_COLORS.get(obj.cls, DEFAULT_COLOR)
@@ -189,6 +208,11 @@ def main() -> int:
                     cv2.LINE_AA,
                 )
 
+                # Write annotated frame to video file if requested
+                if video_writer is not None:
+                    video_writer.write(frame)
+
+            if not args.no_display:
                 cv2.imshow(window_name, frame)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
@@ -212,6 +236,9 @@ def main() -> int:
         logger.info("Interrupted by user.")
     finally:
         source.close()
+        if video_writer is not None:
+            video_writer.release()
+            logger.info(f"Annotated video saved successfully to: {args.save_video}")
         if not args.no_display:
             cv2.destroyAllWindows()
 
