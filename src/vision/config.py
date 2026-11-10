@@ -48,6 +48,7 @@ class MergeConfig:
 class GeometryConfig:
     """Planar homography and distance geometry configuration."""
     max_range_m: float = 15.0
+    hull_margin_m: float = 1.5
     distance_ema_alpha: float = 0.4
     truncation_margin_px: int = 3
 

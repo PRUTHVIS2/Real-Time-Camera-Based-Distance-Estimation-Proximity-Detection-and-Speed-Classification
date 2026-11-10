@@ -31,7 +31,9 @@ from vision.calibration import (
     world_to_pixel,
 )
 from vision.capture import create_source
-from vision.config import load_config
+from vision.config import AppConfig, load_config
+from vision.detector import YoloDetector
+from vision.geometry import estimate_focal_length_px
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("calibrate")
@@ -44,8 +46,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--camera-id",
         type=str,
-        default="laptop_webcam",
-        help="Camera identifier (defaults to laptop_webcam).",
+        default=None,
+        help="Camera identifier (defaults to config camera.camera_id).",
     )
     parser.add_argument(
         "--points-csv",
@@ -76,6 +78,23 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.5,
         help="Camera lens height above ground in metres.",
+    )
+    parser.add_argument(
+        "--calibrate-focal",
+        action="store_true",
+        help="Estimate pinhole focal_px from one person standing at --ref-distance and save into existing JSON.",
+    )
+    parser.add_argument(
+        "--ref-distance",
+        type=float,
+        default=None,
+        help="True tape-measured camera distance (metres) to the reference person for --calibrate-focal.",
+    )
+    parser.add_argument(
+        "--person-height",
+        type=float,
+        default=None,
+        help="True height (metres) of the reference person (defaults to pinhole_baseline.person_height_m).",
     )
     parser.add_argument(
         "--output",
@@ -156,6 +175,8 @@ class CalibrationSession:
                     lbl = self.val_targets[curr - 1][0]
                     self.status_msg = f"Recorded validation point {curr}/{total}: {lbl} at ({x}, {y})"
                     logger.info(f"Recorded validation point {curr}/{total}: {lbl} at pixel ({x}, {y})")
+                    if curr == total:
+                        self.validate_held_out()
 
     def undo(self) -> None:
         if self.validation_mode:
@@ -398,52 +419,44 @@ class CalibrationSession:
             )
 
 
-def main() -> int:
-    args = parse_args()
-    cfg = load_config(default_path=args.config, local_path=args.local_config)
-
-    calib_targets = load_points_csv(args.points_csv)
-    val_targets = load_points_csv(args.val_csv) if Path(args.val_csv).is_file() else []
-
-    out_json = (
-        Path(args.output)
-        if args.output is not None
-        else Path(f"data/calibration/{args.camera_id}.json")
-    )
-
-    window_name = "Minor Project - Camera Calibration (Freeze: Space/f | Click points)"
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-
-    # 1. Acquire frozen frame (either from static image or live stream)
-    frozen_frame: np.ndarray | None = None
-
+def _acquire_frame(
+    args: argparse.Namespace,
+    cfg: AppConfig,
+    window_name: str,
+    prompt_text: str,
+) -> np.ndarray | None:
+    """Acquire a frozen frame either from a static image file or live camera preview."""
     if args.image:
         frozen_frame = cv2.imread(args.image)
         if frozen_frame is None:
             logger.error(f"Failed to read image from {args.image}")
-            return 1
-    else:
-        source_val = args.source if args.source is not None else cfg.camera.source
-        logger.info(f"Opening live camera source: {source_val}")
-        source = create_source(
-            source_val,
-            width=cfg.camera.width,
-            height=cfg.camera.height,
-            fps=cfg.camera.fps,
-            fourcc=cfg.camera.fourcc,
-            rtsp_transport=cfg.camera.rtsp_transport,
-        )
+            return None
+        return frozen_frame
 
-        logger.info("Live preview active. Press SPACE or 'f' to freeze a calibration frame, 'q' to quit.")
+    source_val = args.source if args.source is not None else cfg.camera.source
+    logger.info(f"Opening live camera source: {source_val}")
+    source = create_source(
+        source_val,
+        width=cfg.camera.width,
+        height=cfg.camera.height,
+        fps=cfg.camera.fps,
+        fourcc=cfg.camera.fourcc,
+        rtsp_transport=cfg.camera.rtsp_transport,
+    )
+
+    frozen_frame: np.ndarray | None = None
+    logger.info("Live preview active. Press SPACE or 'f' to freeze a frame, 'q' to quit.")
+    try:
         while True:
             frame, _ = source.read()
             if frame is None:
+                cv2.waitKey(10)
                 continue
 
             preview = frame.copy()
             cv2.putText(
                 preview,
-                "LIVE: Position floor marks, then press SPACE to freeze frame",
+                prompt_text,
                 (15, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.65,
@@ -454,22 +467,153 @@ def main() -> int:
             key = cv2.waitKey(30) & 0xFF
             if key in (ord(" "), ord("f")):
                 frozen_frame = frame.copy()
-                logger.info("Frame frozen for calibration.")
+                logger.info("Frame frozen.")
                 break
-            if key == ord("q"):
-                source.close()
-                cv2.destroyAllWindows()
-                return 0
-
+            if key == ord("q") or cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                break
+    finally:
         source.close()
 
-    assert frozen_frame is not None
+    return frozen_frame
+
+
+def _run_focal_calibration(
+    args: argparse.Namespace,
+    cfg: AppConfig,
+    out_json: Path,
+    window_name: str,
+) -> int:
+    """Estimate focal_px from one tape-measured reference person and update calibration JSON."""
+    if args.ref_distance is None or args.ref_distance <= 0:
+        logger.error("--calibrate-focal requires --ref-distance <metres> (> 0).")
+        return 1
+
+    person_h = (
+        args.person_height
+        if args.person_height is not None
+        else cfg.pinhole_baseline.person_height_m
+    )
+
+    calib = CalibrationData.load_json(out_json)
+    frozen_frame = _acquire_frame(
+        args,
+        cfg,
+        window_name,
+        f"Stand person ({person_h:.2f}m tall) at {args.ref_distance:.2f}m, press SPACE",
+    )
+    if frozen_frame is None:
+        cv2.destroyAllWindows()
+        return 0
+
+    h, w = frozen_frame.shape[:2]
+    if (w, h) != (calib.image_width, calib.image_height):
+        raise ValueError(
+            f"Calibration frame size mismatch for {calib.camera_id}: "
+            f"expected {calib.image_width}x{calib.image_height}, got {w}x{h}"
+        )
+
+    detector = YoloDetector(cfg.detector)
+    person_dets = [d for d in detector.detect(frozen_frame) if d.cls == "person"]
+
+    selected_box: Tuple[float, float, float, float] | None = None
+    if person_dets:
+        # Pick largest / highest-confidence person detection
+        best = max(person_dets, key=lambda d: (d.xyxy[3] - d.xyxy[1]) * d.conf)
+        selected_box = best.xyxy
+
+    clicked_y: list[int] = []
+
+    def _on_mouse(event: int, x: int, y: int, flags: int, param: None) -> None:
+        if event == cv2.EVENT_LBUTTONDOWN and len(clicked_y) < 2:
+            clicked_y.append(y)
+
+    cv2.setMouseCallback(window_name, _on_mouse)
+
+    while True:
+        vis = frozen_frame.copy()
+        h_px: float | None = None
+        src_note = ""
+
+        if len(clicked_y) == 2:
+            y_top, y_bot = min(clicked_y), max(clicked_y)
+            h_px = float(y_bot - y_top)
+            cv2.line(vis, (0, y_top), (w, y_top), (255, 0, 255), 2)
+            cv2.line(vis, (0, y_bot), (w, y_bot), (255, 0, 255), 2)
+            src_note = "manual clicks"
+        elif selected_box is not None:
+            x1, y1, x2, y2 = (int(round(v)) for v in selected_box)
+            h_px = float(selected_box[3] - selected_box[1])
+            cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            src_note = "YOLO person box"
+
+        if h_px is not None and h_px > 0:
+            focal_px = estimate_focal_length_px(h_px, person_h, args.ref_distance)
+            info = (
+                f"h_px={h_px:.1f}px ({src_note}) -> focal_px={focal_px:.1f}px "
+                f"| Press 's' to save, 'r' click manually, 'q' quit"
+            )
+        else:
+            focal_px = None
+            info = "Click HEAD top then FEET bottom (2 clicks). Press 'r' reset, 'q' quit."
+
+        cv2.rectangle(vis, (0, h - 38), (w, h), (30, 30, 30), -1)
+        cv2.putText(vis, info, (10, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1, cv2.LINE_AA)
+        cv2.imshow(window_name, vis)
+
+        key = cv2.waitKey(30) & 0xFF
+        if key == ord("q") or cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+            break
+        elif key == ord("r"):
+            clicked_y.clear()
+            selected_box = None
+        elif key == ord("s") and focal_px is not None:
+            calib.focal_px = round(focal_px, 2)
+            calib.save_json(out_json)
+            print(
+                f"[SUCCESS] Saved focal_px={calib.focal_px:.2f} px "
+                f"(H_person={person_h:.2f}m, d_ref={args.ref_distance:.2f}m, h_px={h_px:.1f}px) to {out_json}"
+            )
+            break
+
+    cv2.destroyAllWindows()
+    return 0
+
+
+def main() -> int:
+    args = parse_args()
+    cfg = load_config(default_path=args.config, local_path=args.local_config)
+    camera_id = args.camera_id if args.camera_id is not None else cfg.camera.camera_id
+
+    out_json = (
+        Path(args.output)
+        if args.output is not None
+        else Path(f"data/calibration/{camera_id}.json")
+    )
+
+    window_name = "Minor Project - Camera Calibration (Freeze: Space/f | Click points)"
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+
+    if args.calibrate_focal:
+        return _run_focal_calibration(args, cfg, out_json, window_name)
+
+    calib_targets = load_points_csv(args.points_csv)
+    val_targets = load_points_csv(args.val_csv) if Path(args.val_csv).is_file() else []
+
+    frozen_frame = _acquire_frame(
+        args,
+        cfg,
+        window_name,
+        "LIVE: Position floor marks, then press SPACE to freeze frame",
+    )
+    if frozen_frame is None:
+        cv2.destroyAllWindows()
+        return 0
 
     session = CalibrationSession(
         frame=frozen_frame,
         calib_targets=calib_targets,
         val_targets=val_targets,
-        camera_id=args.camera_id,
+        camera_id=camera_id,
         camera_xy=[args.camera_x, args.camera_y],
         camera_height_m=args.camera_height,
         output_path=out_json,

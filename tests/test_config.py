@@ -24,6 +24,7 @@ def test_default_config_loads(tmp_path):
     assert cfg.merge.min_containment == 0.5
     assert cfg.merge.rider_memory_s == 1.0
     assert cfg.geometry.max_range_m == 15.0
+    assert cfg.geometry.hull_margin_m == 1.5
     assert cfg.proximity.threshold_m["person"] == 3.0
     assert cfg.speed.window_s == 0.7
     assert cfg.speed.person_upper_mps == [0.3, 1.0, 1.8, 3.0]

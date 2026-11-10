@@ -21,6 +21,7 @@ merge:
 
 geometry:
   max_range_m: 15              # beyond this, distance is OUT_OF_RANGE
+  hull_margin_m: 1.5           # max distance (m) outside calibrated grid convex hull still treated as in-range
   distance_ema_alpha: 0.4
   truncation_margin_px: 3      # box touching frame edge => foot point unreliable
 

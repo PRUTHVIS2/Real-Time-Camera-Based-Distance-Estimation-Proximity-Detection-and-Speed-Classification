@@ -38,4 +38,5 @@ class Measurement:
     speed_mps: float | None
     speed_kmh: float | None
     speed_class: str | None  # 'STATIONARY' | 'SLOW' | 'MODERATE' | 'FAST' | 'VERY_FAST' | 'ESTIMATING'
+    pinhole_distance_m: float | None = None  # optional comparison baseline
 
