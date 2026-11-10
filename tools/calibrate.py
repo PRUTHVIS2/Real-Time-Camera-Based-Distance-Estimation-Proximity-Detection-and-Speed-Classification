@@ -85,6 +85,11 @@ def parse_args() -> argparse.Namespace:
         help="Estimate pinhole focal_px from one person standing at --ref-distance and save into existing JSON.",
     )
     parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Overlay the saved homography grid live on the camera feed to verify alignment.",
+    )
+    parser.add_argument(
         "--ref-distance",
         type=float,
         default=None,
@@ -579,6 +584,127 @@ def _run_focal_calibration(
     return 0
 
 
+def _draw_grid_from_calib(frame: np.ndarray, calib: CalibrationData) -> None:
+    """Draw metric grid lines and calibration point dots onto frame from saved CalibrationData."""
+    h, w = frame.shape[:2]
+    H = calib.homography
+    x_lines = sorted({pt[0] for pt in calib.world_pts})
+    y_lines = sorted({pt[1] for pt in calib.world_pts})
+
+    for x in x_lines:
+        pts = []
+        for y in np.linspace(min(y_lines), max(y_lines), 30):
+            try:
+                u, v = world_to_pixel(H, (x, y))
+                if 0 <= u < w and 0 <= v < h:
+                    pts.append((int(round(u)), int(round(v))))
+            except ValueError:
+                pass
+        for a, b in zip(pts, pts[1:]):
+            cv2.line(frame, a, b, (0, 220, 220), 2, cv2.LINE_AA)
+
+    for y in y_lines:
+        pts = []
+        for x in np.linspace(min(x_lines), max(x_lines), 30):
+            try:
+                u, v = world_to_pixel(H, (x, y))
+                if 0 <= u < w and 0 <= v < h:
+                    pts.append((int(round(u)), int(round(v))))
+            except ValueError:
+                pass
+        for a, b in zip(pts, pts[1:]):
+            cv2.line(frame, a, b, (0, 220, 220), 2, cv2.LINE_AA)
+
+    for wx, wy in calib.world_pts:
+        try:
+            u, v = world_to_pixel(H, (wx, wy))
+            if 0 <= u < w and 0 <= v < h:
+                cv2.circle(frame, (int(round(u)), int(round(v))), 6, (0, 0, 255), -1)
+        except ValueError:
+            pass
+
+
+def _run_live_grid_verify(
+    args: argparse.Namespace,
+    cfg: AppConfig,
+    out_json: Path,
+    window_name: str,
+) -> int:
+    """Overlay saved calibration grid live on the camera stream to verify alignment."""
+    calib = CalibrationData.load_json(out_json)
+    logger.info(f"Loaded calibration for verify: {out_json} ({calib.image_width}x{calib.image_height})")
+
+    if args.image:
+        frame = cv2.imread(args.image)
+        if frame is None:
+            logger.error(f"Failed to read image from {args.image}")
+            return 1
+        h, w = frame.shape[:2]
+        if (w, h) != (calib.image_width, calib.image_height):
+            raise ValueError(
+                f"Calibration frame size mismatch: expected {calib.image_width}x{calib.image_height}, got {w}x{h}"
+            )
+        _draw_grid_from_calib(frame, calib)
+        cv2.imshow(window_name, frame)
+        while True:
+            key = cv2.waitKey(30) & 0xFF
+            if key == ord("q") or cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                break
+        cv2.destroyAllWindows()
+        return 0
+
+    source_val = args.source if args.source is not None else cfg.camera.source
+    logger.info(f"Opening live camera source for grid verification: {source_val}")
+    source = create_source(
+        source_val,
+        width=cfg.camera.width,
+        height=cfg.camera.height,
+        fps=cfg.camera.fps,
+        fourcc=cfg.camera.fourcc,
+        rtsp_transport=cfg.camera.rtsp_transport,
+    )
+    verified_size = False
+
+    try:
+        while True:
+            frame, _ = source.read()
+            if frame is None:
+                key = cv2.waitKey(30) & 0xFF
+                if key == ord("q") or cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                    break
+                continue
+
+            h, w = frame.shape[:2]
+            if not verified_size:
+                if (w, h) != (calib.image_width, calib.image_height):
+                    raise ValueError(
+                        f"Calibration frame size mismatch: expected {calib.image_width}x{calib.image_height}, got {w}x{h}"
+                    )
+                verified_size = True
+
+            vis = frame.copy()
+            _draw_grid_from_calib(vis, calib)
+            cv2.putText(
+                vis,
+                f"VERIFY ({calib.camera_id}): Press 'q' to quit",
+                (15, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
+            cv2.imshow(window_name, vis)
+
+            key = cv2.waitKey(30) & 0xFF
+            if key == ord("q") or cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                break
+    finally:
+        source.close()
+        cv2.destroyAllWindows()
+    return 0
+
+
 def main() -> int:
     args = parse_args()
     cfg = load_config(default_path=args.config, local_path=args.local_config)
@@ -592,6 +718,9 @@ def main() -> int:
 
     window_name = "Minor Project - Camera Calibration (Freeze: Space/f | Click points)"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+
+    if args.verify:
+        return _run_live_grid_verify(args, cfg, out_json, window_name)
 
     if args.calibrate_focal:
         return _run_focal_calibration(args, cfg, out_json, window_name)
