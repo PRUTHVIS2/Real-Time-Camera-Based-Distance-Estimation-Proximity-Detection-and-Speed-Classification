@@ -3,7 +3,7 @@
 **Project:** Real-Time Camera-Based Distance Estimation, Proximity Detection and Speed Classification of Pedestrians and Vehicles (MCA461P)  
 **Current Active Branch:** `phase-3-calibration-homography`  
 **Latest Tag:** `phase-3-done`  
-**Status Date:** 2026-11-01  
+**Status Date:** 2026-11-10  
 
 ---
 
@@ -11,11 +11,11 @@
 
 | Phase | Phase Name | Status | Acceptance Criteria / Tests |
 |---|---|---|---|
-| **Phase 0** | Environment and skeleton | **COMPLETE** | CPU PyTorch, pinned Python 3.12, strict typed config, `check_env.py` benchmark passed. Tag: `phase-0-done`. |
-| **Phase 1** | Capture and detection | **COMPLETE** | `FrameSource` (Webcam/RTSP/File), YOLO11 detector wrapper, COCO class filter, monotonic timestamps, `record.py`, `run_live.py`. Tag: `phase-1-done`. |
+| **Phase 0** | Environment and skeleton | **COMPLETE** | CPU PyTorch, pinned Python 3.12, strict typed config, `check_env.py` benchmark passed, RTSP `ffplay` & `check_env.py` passed. Tag: `phase-0-done`. |
+| **Phase 1** | Capture and detection | **COMPLETE** | `FrameSource` (Webcam/RTSP/File), YOLO11 detector wrapper, COCO class filter, monotonic timestamps, `record.py`, `run_live.py`, RTSP reconnect & 2-min lag tests passed. Tag: `phase-1-done`. |
 | **Phase 2** | Tracking & rider+bike merge | **COMPLETE** | ByteTrack tracking, pure geometric containment rider merger, pillion support, time-based flicker memory suppression, edge truncation tags. Tag: `phase-2-done`. |
-| **Phase 3** | Calibration & homography | **CODE COMPLETE** | Pure planar homography $H$ mathematics, reprojection errors (metres/px), leave-one-out CV, `tools/calibrate.py` with freeze-frame & 4x magnifying loupe, resolution guard. Synthetic tests (P3-A1–P3-A6) all passing. Physical human test pending. Tag: `phase-3-done`. |
-| **Phase 4** | Distance estimation | *Pending Human Calibration (Phase 3)* | Skeleton in place (`src/vision/geometry.py`, `tools/eval_distance.py`, `tests/test_geometry.py`). |
+| **Phase 3** | Calibration & homography | **COMPLETE** | Pure planar homography $H$ mathematics, reprojection errors (metres/px), leave-one-out CV, `tools/calibrate.py` with freeze-frame & 4x magnifying loupe, resolution guard. Synthetic tests (P3-A1–P3-A6) and human RTSP phone calibration tests (P3-H1–P3-H4) all passed (`0.53 cm` mean reprojection error, `0.75 cm` mean held-out validation error). Tag: `phase-3-done`. |
+| **Phase 4** | Distance estimation | *In Progress* | Skeleton in place (`src/vision/geometry.py`, `tools/eval_distance.py`, `tests/test_geometry.py`). |
 | **Phase 5** | Proximity detection | *Upcoming* | Skeleton in place (`src/vision/proximity.py`, `tests/test_proximity.py`). |
 | **Phase 6** | Speed estimation & 5-level classification | *Upcoming* | Skeleton in place (`src/vision/speed.py`, `tools/eval_speed.py`, `tests/test_speed.py`). |
 | **Phase 7** | Flask + WebSocket dashboard | *Upcoming* | Skeleton in place (`src/vision/dashboard/app.py`, `tests/test_dashboard.py`). |
@@ -63,13 +63,13 @@
   - [x] `src/vision/calibration.py`: Pure mathematics for `compute_homography`, `pixel_to_world`, `world_to_pixel`, `reprojection_errors` (in metres and pixels), `leave_one_out_errors`, and resolution-validated `CalibrationData` JSON serialization.
   - [x] Collinearity & safety guards: SVD singularity checks enforce at least 4 non-collinear correspondence points.
   - [x] `tools/calibrate.py`: Interactive calibration GUI featuring live freeze-frame (`Space`/`f`), 4x magnifying loupe for sub-pixel clicking accuracy, undo (`u`), reset (`r`), compute $H$ (`Enter`), projected 1 m metric grid overlay, held-out validation (`v`), and JSON save (`s`).
-  - [x] Grid specification: 15-point ground grid template (2 m wide $\times$ 4 m deep, 1 m increments) in `data/calibration/laptop_webcam_points.csv` and 4 validation points in `data/calibration/laptop_webcam_val_points.csv`.
+  - [x] Grid specification: 15-point laptop grid (`data/calibration/laptop_webcam_points.csv`) and 9-point indoor RTSP phone grid (`data/calibration/phone_main_points.csv`, 1 m × 1 m at 0.5 m spacing) + 4 validation points (`data/calibration/phone_main_val_points.csv`).
   - [x] Automated tests (`tests/test_calibration.py`): 7/7 passing (P3-A1 through P3-A6 + LOO test).
-  - [ ] **Pending Human Verification:**
-    - `P3-H1`: Measure physical tape grid on floor, click marks with `calibrate.py`, compute $H$, save `data/calibration/laptop_webcam.json`.
-    - `P3-H2`: Validate on held-out points ($< 10$ cm error within 6 m).
-    - `P3-H3`: Inspect projected 1 m yellow metric grid against physical floor tape.
-    - `P3-H4`: Sensitivity check (camera tilt/movement invalidates alignment, proving camera must stay fixed).
+  - [x] **Human Verification (Phone RTSP `phone_main`, 1920×1080):**
+    - `P3-H1`: Saved `data/calibration/phone_main.json` (`camera_xy=[1.0, 0.0]`, `camera_height_m=1.47`). Mean reprojection error `0.53 cm` (max `1.10 cm`, mean LOO `1.01 cm`).
+    - `P3-H2`: Held-out validation on `V0`–`V3`: mean error `0.75 cm`, max `1.03 cm`.
+    - `P3-H3`: Visual metric grid aligned with physical floor tape lines.
+    - `P3-H4`: Camera bump sensitivity confirmed (grid misaligns on camera movement; recalibrated afterward).
 
 ---
 
@@ -90,16 +90,7 @@ tests/test_merge.py ........                                             [100%]
 
 ## 4. Git Origin and Remote Status
 
-- **Configured Remotes:** `None` (Local repository initialized with `git init`).
-- **Current Branch:** `phase-3-calibration-homography`
-- **Latest Commit Hash:** `5a1fba6` (plus working tree updates staged for commit).
-- **How to connect a remote origin (e.g. GitHub / GitLab):**
-  ```bash
-  git remote add origin git@github.com:<username>/<repo-name>.git
-  # or HTTPS:
-  git remote add origin https://github.com/<username>/<repo-name>.git
+- **Configured Remote (`origin`):** `git@github.com:PRUTHVIS2/Real-Time-Camera-Based-Distance-Estimation-Proximity-Detection-and-Speed-Classification.git`
+- **Current Branch:** `phase-3-calibration-homography` (moving to `phase-4-distance-estimation`)
+- **Latest Tag:** `phase-3-done`
 
-  # Push all branches and tags:
-  git push -u origin --all
-  git push origin --tags
-  ```

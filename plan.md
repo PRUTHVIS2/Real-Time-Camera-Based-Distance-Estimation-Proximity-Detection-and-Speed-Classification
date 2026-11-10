@@ -2,7 +2,7 @@
 
 **Project:** Real-Time Camera-Based Distance Estimation, Proximity Detection and Speed Classification of Pedestrians and Vehicles (MCA461P)
 
-**Audience:** an AI coding agent (and the human reviewer, Pruthvi). Build the project **one phase at a time**.
+**Audience:** AI coding agent (and the human reviewer, Pruthvi). Build the project **one phase at a time**.
 
 ---
 
