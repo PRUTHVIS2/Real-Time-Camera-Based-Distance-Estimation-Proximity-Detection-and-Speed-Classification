@@ -23,7 +23,7 @@ geometry:
   max_range_m: 15              # beyond this, distance is OUT_OF_RANGE
   hull_margin_m: 1.5           # max distance (m) outside calibrated grid convex hull still treated as in-range
   distance_ema_alpha: 0.4
-  truncation_margin_px: 3      # box touching frame edge => foot point unreliable
+  truncation_margin_px: 20     # box touching frame edge => foot point unreliable (accounts for imgsz=640 scale on 1080p)
 
 pinhole_baseline:              # ASSUMED real heights, used only for the comparison baseline
   person_height_m: 1.7

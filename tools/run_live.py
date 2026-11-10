@@ -117,7 +117,7 @@ def _draw_measurements(frame: np.ndarray, measurements: Sequence[Measurement]) -
             label_parts.append(f"d={m.distance_m:.2f}m")
             if not m.in_range:
                 label_parts.append("[OOR]")
-        elif obj.truncated:
+        else:
             label_parts.append("[EDGE]")
         label = " ".join(label_parts)
 

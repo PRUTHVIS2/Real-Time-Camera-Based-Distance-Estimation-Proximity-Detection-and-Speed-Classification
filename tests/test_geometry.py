@@ -104,7 +104,7 @@ def test_p4_a2_bottom_edge_truncated_returns_none_distance():
     cfg = AppConfig()
     smoother = DistanceSmoother(alpha=cfg.geometry.distance_ema_alpha)
 
-    # Box bottom y2 = 718 touches bottom edge of 1280x720 (margin=3 -> >= 717)
+    # Box bottom y2 = 718 touches bottom edge of 1280x720 (margin=20 -> >= 700)
     obj_bottom = TrackedObject(
         track_id=7,
         cls="person",
@@ -114,7 +114,10 @@ def test_p4_a2_bottom_edge_truncated_returns_none_distance():
         truncated=True,
         t=1.0,
     )
-    assert is_foot_truncated(obj_bottom.box_xyxy, (1280, 720), margin_px=3)
+    assert is_foot_truncated(obj_bottom.box_xyxy, (1280, 720), margin_px=cfg.geometry.truncation_margin_px)
+
+    # Also verify YOLO 1080p edge offset (e.g. y2 = 1070 in 1920x1080 -> 10 px from bottom)
+    assert is_foot_truncated((500.0, 400.0, 700.0, 1070.0), (1920, 1080), margin_px=cfg.geometry.truncation_margin_px)
 
     measurements = measure_objects(
         [obj_bottom],
