@@ -1,0 +1,2 @@
+range_bucket,n_positions,homography_mae_m,homography_mre,homography_accuracy,pinhole_mae_m,pinhole_mre,pinhole_accuracy
+0-4m,7,0.038828571428571435,0.016020534078674858,0.9839794659213251,0.12693571428571424,0.048221372622354215,0.9517786273776457

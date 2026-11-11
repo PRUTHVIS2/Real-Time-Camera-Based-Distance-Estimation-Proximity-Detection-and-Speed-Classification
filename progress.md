@@ -1,9 +1,9 @@
 # Project Implementation Progress
 
 **Project:** Real-Time Camera-Based Distance Estimation, Proximity Detection and Speed Classification of Pedestrians and Vehicles (MCA461P)  
-**Current Active Branch:** `phase-3-calibration-homography`  
-**Latest Tag:** `phase-3-done`  
-**Status Date:** 2026-11-10  
+**Current Active Branch:** `phase-4-distance-estimation`  
+**Latest Tag:** `phase-4-done`  
+**Status Date:** 2026-11-11  
 
 ---
 
@@ -15,7 +15,7 @@
 | **Phase 1** | Capture and detection | **COMPLETE** | `FrameSource` (Webcam/RTSP/File), YOLO11 detector wrapper, COCO class filter, monotonic timestamps, `record.py`, `run_live.py`, RTSP reconnect & 2-min lag tests passed. Tag: `phase-1-done`. |
 | **Phase 2** | Tracking & rider+bike merge | **COMPLETE** | ByteTrack tracking, pure geometric containment rider merger, pillion support, time-based flicker memory suppression, edge truncation tags. Tag: `phase-2-done`. |
 | **Phase 3** | Calibration & homography | **COMPLETE** | Pure planar homography $H$ mathematics, reprojection errors (metres/px), leave-one-out CV, `tools/calibrate.py` with freeze-frame & 4x magnifying loupe, resolution guard. Synthetic tests (P3-A1–P3-A6) and human RTSP phone calibration tests (P3-H1–P3-H4) all passed (`0.53 cm` mean reprojection error, `0.75 cm` mean held-out validation error). Tag: `phase-3-done`. |
-| **Phase 4** | Distance estimation | *In Progress* | Skeleton in place (`src/vision/geometry.py`, `tools/eval_distance.py`, `tests/test_geometry.py`). |
+| **Phase 4** | Distance estimation | **COMPLETE (Person Indoor)** | Pure ground geometry (`geometry.py`), `VisionPipeline`, EMA smoothing, pinhole baseline, live overlay + mini-map, `eval_distance.py`. Synthetic tests (P4-A1–P4-A6) passing; person evaluation (`T1`–`T7`) achieved `98.40%` accuracy (`0.0388 m` MAE) vs Pinhole `95.18%` (`0.1269 m` MAE). Vehicle tests (`P4-H5`, `P4-H6`) pending outdoor testing. Tag: `phase-4-done`. |
 | **Phase 5** | Proximity detection | *Upcoming* | Skeleton in place (`src/vision/proximity.py`, `tests/test_proximity.py`). |
 | **Phase 6** | Speed estimation & 5-level classification | *Upcoming* | Skeleton in place (`src/vision/speed.py`, `tools/eval_speed.py`, `tests/test_speed.py`). |
 | **Phase 7** | Flask + WebSocket dashboard | *Upcoming* | Skeleton in place (`src/vision/dashboard/app.py`, `tests/test_dashboard.py`). |
@@ -71,19 +71,33 @@
     - `P3-H3`: Visual metric grid aligned with physical floor tape lines.
     - `P3-H4`: Camera bump sensitivity confirmed (grid misaligns on camera movement; recalibrated afterward).
 
+### Phase 4: Distance Estimation
+- **Goal:** Compute ground position `(X, Y)` and distance `d` from camera via planar homography $H$, validate against tape measurements, and implement pinhole baseline for comparison.
+- **Specification vs Actual:**
+  - [x] `src/vision/geometry.py`: Pure functions `foot_point`, `box_height_px`, `is_foot_truncated`, `distance_from_camera`, `distance_to_convex_hull`, `is_in_range`, `pinhole_distance`, `estimate_focal_length_px`, and `DistanceSmoother` (EMA).
+  - [x] `src/vision/pipeline.py`: `VisionPipeline.process_frame()`, `measure_objects()`, and `MeasurementCsvLogger`.
+  - [x] `tools/run_live.py`: Displays `d=X.XXm`, foot-point dots, `[OOR]` / `[EDGE]` flags, top-down mini-map, and `--log-csv`.
+  - [x] `tools/calibrate.py`: Added `--calibrate-focal` (`focal_px = 1247.1` stored in `phone_main.json`) and `--verify` live grid overlay mode.
+  - [x] `tools/eval_distance.py`: Evaluates per-position median errors, MAE, MRE, accuracy (`1 - MRE`), range buckets, and Homography vs Pinhole comparison plots in `results/`.
+  - [x] Automated tests (`tests/test_geometry.py`): 8/8 passing (`P4-A1` through `P4-A6`, `eval_distance`, and `VisionPipeline` resolution/CSV schema).
+  - [x] **Human Evaluation (Person indoor `T1`–`T7`, `phone_main.json`):**
+    - `P4-H1` & `P4-H2`: Homography `MAE = 0.0388 m` (`3.9 cm`), `MRE = 1.60%`, `Accuracy = 98.40%` vs Pinhole `MAE = 0.1269 m` (`12.7 cm`), `MRE = 4.82%`, `Accuracy = 95.18%`.
+    - `P4-H3` & `P4-H4`: Smooth live distance updates verified; bottom-edge truncation (`truncation_margin_px: 20`) hides distance cleanly on `1080p`.
+  - [ ] **Pending Outdoor Human Verification:** `P4-H5` (two-wheeler) and `P4-H6` (car).
+
 ---
 
 ## 3. Test Suite Summary
 
-Total automated unit tests currently passing: **25 / 25**
+Total automated unit tests currently passing: **33 / 33**
 
 ```
-============================== 25 passed in 1.61s ==============================
-tests/test_calibration.py .......                                        [ 28%]
-tests/test_capture.py ...                                                [ 40%]
-tests/test_config.py .....                                               [ 60%]
-tests/test_detector.py ..                                                [ 68%]
-tests/test_merge.py ........                                             [100%]
+tests/test_calibration.py .......
+tests/test_capture.py ...
+tests/test_config.py .....
+tests/test_detector.py ..
+tests/test_geometry.py ........
+tests/test_merge.py ........
 ```
 
 ---
@@ -91,6 +105,6 @@ tests/test_merge.py ........                                             [100%]
 ## 4. Git Origin and Remote Status
 
 - **Configured Remote (`origin`):** `git@github.com:PRUTHVIS2/Real-Time-Camera-Based-Distance-Estimation-Proximity-Detection-and-Speed-Classification.git`
-- **Current Branch:** `phase-3-calibration-homography` (moving to `phase-4-distance-estimation`)
-- **Latest Tag:** `phase-3-done`
+- **Current Branch:** `phase-4-distance-estimation`
+- **Latest Tag:** `phase-4-done`
 

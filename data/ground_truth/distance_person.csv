@@ -1,0 +1,8 @@
+point_label,X_true_m,Y_true_m,d_true_m,notes
+T1,0.25,2.25,2.37,indoor mark 1
+T2,0.75,2.25,2.26,indoor mark 2
+T3,0.25,2.75,2.85,indoor mark 3
+T4,0.75,2.75,2.76,indoor mark 4
+T5,,,1.95,extra mark 1
+T6,,,3.40,extra mark 2
+T7,,,3.60,extra mark 3

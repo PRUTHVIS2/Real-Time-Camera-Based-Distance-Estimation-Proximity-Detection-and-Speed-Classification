@@ -23,6 +23,8 @@ data/fixtures/
 results/*.mp4
 results/*.avi
 results/*.mkv
+results/*_logs/
+results/live_log*.csv
 
 # Editor and OS
 .vscode/
